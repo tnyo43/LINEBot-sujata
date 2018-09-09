@@ -8,7 +8,7 @@ from linebot.exceptions import (
     InvalidSignatureError
 )
 from linebot.models import (
-    MessageEvent, TextMessage, TextSendMessage,
+    MessageEvent, TextMessage, TextSendMessage, StickerMessage, StickerSendMessage
 )
 
 app = Flask(__name__)
@@ -26,6 +26,10 @@ if CHANNEL_SECRET is None:
 line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(CHANNEL_SECRET)
 
+@app.route("/")
+def index():
+    return "Hello, LineBot sujata"
+
 @app.route("/callback", methods=['POST'])
 def callback():
     # get X-Line-Signature header value
@@ -42,13 +46,17 @@ def callback():
         abort(400)
     return 'OK'
 
+@handler.add(MessageEvent, message=StickerMessage)
+def handle_sticker_message(event):
+    line_bot_api.reply_message(
+            event.reply_token,
+            StickerSendMessage(package_id='1',sticker_id='1'))
 
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     line_bot_api.reply_message(
         event.reply_token,
-        TextSendMessage(text=event.message.text))
-
+        TextSendMessage(text="Hello, Linebot sujata\uD83C\uDF7C"))
 
 if __name__ == "__main__":
     app.run()
