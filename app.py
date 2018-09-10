@@ -31,13 +31,16 @@ line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(CHANNEL_SECRET)
 
 # redisの接続
-r = redis.StrictRedis(host='localhost', port=6379, db=0)
+REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379')
+DATABASE_INDEX = 0
+pool = redis.ConnectionPool.from_url(REDIS_URL, db=DATABASE_INDEX)
+r = redis.StrictRedis(connection_pool=pool)
 
 # postgreの接続
 connection_config = {
-    'host': 'localhost',
+    'host': os.getenv("DB_HOST", None),
     'port': '5432',
-    'database': 'sujata',
+    'database': os.getenv("DB_NAME", None),
     'user': os.getenv("POSTGRE_USER", None),
     'password': os.getenv("POSTGRE_PASS", None)
 }
