@@ -12,6 +12,7 @@ from linebot.models import (
 )
 
 import json
+import threading
 import redis
 import psycopg2
 
@@ -144,9 +145,63 @@ def registration(userId):
     send_message(userId, "ユーザー登録をします。\nニックネームを教えてください")
     set_state(userId, sNAME)
 
+def register_role(userId, role):
+    print("register as a " + role)
+    send_message(userId, "マッチングするまでお待ちください")
+    other = "receiver" if (role == "server") else "server"
+
+    def access_database():
+        # 同じユーザーが登録しているなら更新
+        query = "delete from "+role+"s where userId='" + userId + "';"
+        cur.execute(query)
+        matching(userId, role=role)
+        # 現在時刻と一緒に更新
+        query = "insert into "+role+"s values('" + userId + "', now());"
+        cur.execute(query)
+        connection.commit()
+    threading.Thread(target=access_database).start()
+
+def register_receiver(userId):
+    register_role(userId, "receiver")
+
+def register_server(userId):
+    register_role(userId, "server")
+
+def matching(userId, role):
+    print("match receiver")
+    # serversテーブルで同じ街の人を検索する
+    other = "receiver" if (role == "server") else "server"
+    query = "select users.userId, users.name from users inner join "+other+"s as x on x.userId=users.userId where users.zipcode in (select zipcode from users where userId='"+userId+"') and users.userId<>'"+userId+"' order by x.at ASC;"
+    cur.execute(query)
+    connection.commit()
+    x = None; y = None
+    for row in cur:
+        x = row
+        break
+    query = "select userId, name from users where userId='"+userId+"';";
+    cur.execute(query)
+    connection.commit()
+    for row in cur:
+        y=row
+    if role=="receiver":
+        x, y = y, x
+
+    receiver=x;
+    server=y
+
+    push_message = lambda a, b: line_bot_api.push_message(a[0], TextSendMessage(text=b[1]+"さんとマッチングしました！"))
+    for a, b in zip([x, y], [y, x]):
+        try:
+            push_message(a, b)
+        except:
+            pass
+
 func_dic = {
     "ユーザー登録":registration,
     "ユーザー情報":get_user_info,
+    "お腹すいた":register_receiver,
+    "料理ができた":register_server,
+    "へいお待ち！てやんでい":register_server,
 }
 
 def match_function(userId, text):
