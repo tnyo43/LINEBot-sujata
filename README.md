@@ -11,11 +11,8 @@ https://www.line-community.me/awards/
 LINE Developer channel ->
 https://developers.line.me/console/channel/1605224002/basic/
 
-## 環境変数設定
+Heroku Page ->
+https://sujata-linebot.herokuapp.com/
 
-```
-export LINE_CHANNEL_ACCESS_TOKEN="YOUR_LINE_CHANNEL_ACCESS_TOKEN"
-export LINE_CHANNEL_SECRET="YOUR_LINE_CHANNEL_SECRET"
-export FLASK_APP=app.py
-export FLASK_DEBUG=1
-```
+Heroku Dashboard ->
+https://dashboard.heroku.com/apps/sujata-linebot
