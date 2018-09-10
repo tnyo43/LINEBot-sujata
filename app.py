@@ -44,7 +44,7 @@ connection_config = {
     'user': os.getenv("POSTGRE_USER", None),
     'password': os.getenv("POSTGRE_PASS", None)
 }
-connection = psycopg2.connect(**connection_config)
+connection = psycopg2.connect(**connection_config, sslmode='require')
 cur = connection.cursor()
 
 # state
