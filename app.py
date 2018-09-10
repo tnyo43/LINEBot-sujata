@@ -16,6 +16,9 @@ import threading
 import redis
 import psycopg2
 
+from models.user import User, Server, Receiver
+from models.psudeDB import PsudeDB
+
 app = Flask(__name__)
 
 CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN', None)
@@ -48,21 +51,33 @@ connection_config = {
 connection = psycopg2.connect(**connection_config, sslmode='require')
 cur = connection.cursor()
 
+# for unittest
+IS_TESTING = False
+def set_is_testing(b):
+    global IS_TESTING
+    IS_TESTING = b
+
+psude_db = None
+def set_psude_db():
+    global psude_db
+    psude_db = PsudeDB()
+
 # state
 sNAME, sZIP = range(2)
 MESSAGE = "message"
 NAME = "name"
 ZIP = "zip"
 
-@app.route("/")
-def index():
-    return "Hello, LineBot sujata"
-
 def send_message(userId, text):
-    r.set(MESSAGE+userId, text)
+    if IS_TESTING:
+        return text
+    else:
+        line_bot_api.push_message(userId, TextSendMessage(text))
+        r.set(MESSAGE+userId, "SENT")
 
 def set_state(userId, state):
-    r.set(userId, state)
+    if not IS_TESTING:
+        r.set(userId, state)
 
 def get_state(userId):
     return int(r.get(userId))
@@ -73,82 +88,104 @@ def save_value(userId, key, value):
 def get_value(userId, keys):
     dic = {}
     for key in keys:
-        print(key)
         dic[key] = r.get(key+userId).decode('utf-8')
+        r.delete(key+userId)
     return dic
 
-def resister_user(userId):
-    dic = get_value(userId, [NAME, ZIP])
-    query = "delete from users where userid='" + userId + "';"
+def register_user(user):
+    global psude_db
+    if IS_TESTING:
+        psude_db.store_user(user)
+        return
+    dic = get_value(user.userId, [NAME, ZIP])
+    query = "delete from users where userid='" + user.userId + "';"
     cur.execute(query)
-    print(dic)
     query = "insert into users values ('"
-    query += userId + "', '"
+    query += user.userId + "', '"
     query += dic[NAME] + "', '"
     query += dic[ZIP] + "', "
     query += "0, 0, 0);"
-    print(query)
     try:
         cur.execute(query)
     except:
         pass
     connection.commit()
 
-def get_user_info(userId, void=True):
+def get_user(userId):
+    if IS_TESTING:
+        return psude_db.get_user(userId)
+
     query = "select * from users where userid='" + userId + "';"
     cur.execute(query)
     for x in cur:
-        text = "ユーザー名：" + x[1] + "\n"
-        text += "郵便番号：\u3012" + x[2]
-        if not void:
-            return text
-        else:
-            send_message(userId, text)
-        break
+        return User(x[0], x[1], x[2])
 
-def match_userId(userId, message):
-    print("match user id")
+def get_user_info(userId, void=True):
+    user = get_user(userId)
+    if not user:
+        encourage_register(userId)
+        return
+    text = "ユーザー名：" + user.name + "\n"
+    text += "郵便番号：\u3012" + user.zipcode
+    if not void:
+        return text
+    else:
+        send_message(user.userId, text)
+
+def match_userId(userId, message, state=None):
     try:
-        state = get_state(userId)
-        print(state)
-        text = None
-        if message["type"] == "text":
-            text = message["text"]
+        user = None
+        user = get_user(userId)
+        if state == None:
+            state = int(get_state(userId))
+        text = message
 
         delete = False
-        if int(state) == sNAME:
-            save_value(userId, NAME, text)
+        if state == sNAME:
+            if not IS_TESTING:
+                save_value(userId, NAME, text)
             if len(text) <= 20:
-                send_message(userId, text+"さんですね。郵便番号を教えてください")
-                # 次は郵便番号を尋ねる
                 set_state(userId, sZIP)
+                return send_message(userId, text+"さんですね。郵便番号を教えてください")
             else:
-                send_message(userId, "名前が長すぎます。入力し直してください")
-        elif int(state) == sZIP:
-            print(text, len(text))
+                return send_message(userId, "名前が長すぎます。入力し直してください")
+        elif state == sZIP:
             if len(text) != 7 or not text.isnumeric():
-                send_message(userId, "郵便番号を正しく入力してください")
+                return send_message(userId, "郵便番号を正しく入力してください")
             else:
                 save_value(userId, ZIP, text)
                 # DBに保存して登録
-                resister_user(userId)
-                text = get_user_info(userId, void=False)
-                send_message(userId, text + "\nで登録しました")
+                if not IS_TESTING:
+                    register_user(user)
+                    # text = get_user_info(userId, void=False)
+                    text = str(user)
+                    send_message(userId, text + "\nで登録しました")
+                else:
+                    return send_message(userId, message + "登録完了")
                 delete = True
         if delete:
             r.delete(userId)
     except TypeError:
         pass
 
+def encourage_register(userId):
+    text="ユーザーが見つかりません。\n「ユーザー登録」と話しかけてください"
+    send_message(userId, text)
+
 def registration(userId):
-    print("registration")
-    send_message(userId, "ユーザー登録をします。\nニックネームを教えてください")
-    set_state(userId, sNAME)
+    if not IS_TESTING:
+        set_state(userId, sNAME)
+    return send_message(userId, "ユーザー登録をします。\nニックネームを教えてください")
 
 def register_role(userId, role):
-    print("register as a " + role)
-    send_message(userId, "マッチングするまでお待ちください")
     other = "receiver" if (role == "server") else "server"
+    user = get_user(userId)
+    if not user:
+        encourage_register(userId)
+        print("no user")
+        return
+
+    send_message(userId, "マッチングするまでお待ちください")
 
     def access_database():
         # 同じユーザーが登録しているなら更新
@@ -159,16 +196,20 @@ def register_role(userId, role):
         query = "insert into "+role+"s values('" + userId + "', now());"
         cur.execute(query)
         connection.commit()
-    threading.Thread(target=access_database).start()
+
+    if IS_TESTING:
+        psude_db.store_role(user, role)
+        return psude_db.matching(user, role)
+    else:
+        threading.Thread(target=access_database).start()
 
 def register_receiver(userId):
-    register_role(userId, "receiver")
+    return register_role(userId, "receiver")
 
 def register_server(userId):
-    register_role(userId, "server")
+    return register_role(userId, "server")
 
 def matching(userId, role):
-    print("match receiver")
     # serversテーブルで同じ街の人を検索する
     other = "receiver" if (role == "server") else "server"
     query = "select users.userId, users.name from users inner join "+other+"s as x on x.userId=users.userId where users.zipcode in (select zipcode from users where userId='"+userId+"') and users.userId<>'"+userId+"' order by x.at ASC;"
@@ -178,7 +219,7 @@ def matching(userId, role):
     for row in cur:
         x = row
         break
-    query = "select userId, name from users where userId='"+userId+"';";
+    query = "select userId, name from users where userId='"+userId+"';"
     cur.execute(query)
     connection.commit()
     for row in cur:
@@ -186,9 +227,11 @@ def matching(userId, role):
     if role=="receiver":
         x, y = y, x
 
-    receiver=x;
+    receiver=x
     server=y
 
+    if IS_TESTING:
+        return True
     push_message = lambda a, b: line_bot_api.push_message(a[0], TextSendMessage(text=b[1]+"さんとマッチングしました！"))
     for a, b in zip([x, y], [y, x]):
         try:
@@ -207,7 +250,12 @@ func_dic = {
 def match_function(userId, text):
     if text in func_dic.keys():
         func_dic[text](userId)
+        return True
+    return False
 
+@app.route("/")
+def index():
+    return "Hello, LineBot sujata"
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -220,13 +268,17 @@ def callback():
 
     dic = json.loads(body)
     userId = dic["events"][0]["source"]["userId"]
-    match_userId(userId, dic["events"][0]["message"])
+    r.set(MESSAGE+userId, "NOT_YET")
     if dic["events"][0]["message"]["type"] == "text":
-        match_function(userId, dic["events"][0]["message"]["text"])
+        text = dic["events"][0]["message"]["text"]
+        print(text)
+        if not match_function(userId, text):
+            match_userId(userId,text)
 
     # handle webhook body
     try:
-        handler.handle(body, signature)
+        if r.get(MESSAGE+userId).decode('utf-8') != "SENT":
+            handler.handle(body, signature)
     except InvalidSignatureError:
         abort(400)
     return 'OK'
@@ -240,10 +292,7 @@ def handle_sticker_message(event):
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     userId = event.source.user_id
-    try:
-        text = r.get(MESSAGE+userId).decode('utf-8')
-    except AttributeError:
-        text = "Hello, Linebot sujata\uD83C\uDF7C"
+    text = "Hello, Linebot sujata\uD83C\uDF7C"
     line_bot_api.reply_message(
         event.reply_token,
         TextSendMessage(text=text))
