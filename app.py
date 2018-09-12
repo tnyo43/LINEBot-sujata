@@ -63,7 +63,8 @@ def set_psude_db():
     psude_db = PsudeDB()
 
 # state
-sNAME, sZIP = range(2)
+sNAME, sZIP, sMENU = range(3)
+MENU = "menu"
 MESSAGE = "message"
 NAME = "name"
 ZIP = "zip"
@@ -85,11 +86,21 @@ def get_state(userId):
 def save_value(userId, key, value):
     r.set(key+userId, value)
 
-def get_value(userId, keys):
+def get_value(userId, key, delete=False):
+    value = r.get(key+userId)
+    if value:
+        value = value.decode('utf-8')
+    if delete:
+        r.delete(key+userId)
+    return value
+
+def get_values(userId, keys, delete=False):
     dic = {}
     for key in keys:
-        dic[key] = r.get(key+userId).decode('utf-8')
-        r.delete(key+userId)
+        value = r.get(key+userId)
+        dic[key] = value.decode('utf-8') if value else None
+        if delete:
+            r.delete(key+userId)
     return dic
 
 def register_user(user):
@@ -97,28 +108,24 @@ def register_user(user):
     if IS_TESTING:
         psude_db.store_user(user)
         return
-    dic = get_value(user.userId, [NAME, ZIP])
-    query = "delete from users where userid='" + user.userId + "';"
-    cur.execute(query)
-    query = "insert into users values ('"
-    query += user.userId + "', '"
-    query += dic[NAME] + "', '"
-    query += dic[ZIP] + "', "
-    query += "0, 0, 0);"
+    dic = get_values(user.userId, [NAME, ZIP], delete=True)
+    user.name = dic[NAME]
+    user.zipcode = dic[ZIP]
+    query = user.register_query()
     try:
         cur.execute(query)
     except:
         pass
     connection.commit()
 
-def get_user(userId):
+def get_user(userId, role=""):
     if IS_TESTING:
         return psude_db.get_user(userId)
 
-    query = "select * from users where userid='" + userId + "';"
+    query = User.find_query(userId)
     cur.execute(query)
     for x in cur:
-        return User(x[0], x[1], x[2])
+        return User.new(x, role)
 
 def get_user_info(userId, void=True):
     user = get_user(userId)
@@ -150,23 +157,29 @@ def match_userId(userId, message, state=None):
             else:
                 return send_message(userId, "名前が長すぎます。入力し直してください")
         elif state == sZIP:
+            zipcode = text
             if len(text) != 7 or not text.isnumeric():
                 return send_message(userId, "郵便番号を正しく入力してください")
             else:
-                save_value(userId, ZIP, text)
+                save_value(userId, ZIP, zipcode)
                 # DBに保存して登録
                 if not IS_TESTING:
+                    name = get_value(userId, NAME)
+                    user = User(userId, name, zipcode)
                     register_user(user)
-                    # text = get_user_info(userId, void=False)
-                    text = str(user)
+                    text = user.show_info()
                     send_message(userId, text + "\nで登録しました")
                 else:
                     return send_message(userId, message + "登録完了")
                 delete = True
+        elif state == sMENU:
+            menu = text
+            save_value(userId, MENU, menu)
+            register_server(userId)
         if delete:
             r.delete(userId)
-    except TypeError:
-        pass
+    except TypeError as e:
+        print(e)
 
 def encourage_register(userId):
     text="ユーザーが見つかりません。\n「ユーザー登録」と話しかけてください"
@@ -177,23 +190,29 @@ def registration(userId):
         set_state(userId, sNAME)
     return send_message(userId, "ユーザー登録をします。\nニックネームを教えてください")
 
-def register_role(userId, role):
-    other = "receiver" if (role == "server") else "server"
-    user = get_user(userId)
+def register_role(userId, role, menu=None):
+    user = get_user(userId, role)
+    other = "receiver" if(role == "server") else "server"
+
     if not user:
         encourage_register(userId)
         print("no user")
         return
 
-    send_message(userId, "マッチングするまでお待ちください")
+    text = ""
+    if role == "server":
+        user.menu = menu
+        text += user.menu + "で登録しました。\n"
+
+    send_message(userId, text+"マッチングするまでお待ちください")
 
     def access_database():
         # 同じユーザーが登録しているなら更新
-        query = "delete from "+role+"s where userId='" + userId + "';"
+        query = user.unregister_query()
         cur.execute(query)
-        matching(userId, role=role)
+        matching(user)
         # 現在時刻と一緒に更新
-        query = "insert into "+role+"s values('" + userId + "', now());"
+        query = user.register_query()
         cur.execute(query)
         connection.commit()
 
@@ -207,33 +226,33 @@ def register_receiver(userId):
     return register_role(userId, "receiver")
 
 def register_server(userId):
-    return register_role(userId, "server")
+    menu = get_value(userId, MENU, delete=True)
+    if menu == None:
+        set_state(userId, sMENU)
+        send_message(userId, "メニューを教えてください")
+    else:
+        return register_role(userId, "server", menu)
 
-def matching(userId, role):
+def matching(user):
     # serversテーブルで同じ街の人を検索する
-    other = "receiver" if (role == "server") else "server"
-    query = "select users.userId, users.name from users inner join "+other+"s as x on x.userId=users.userId where users.zipcode in (select zipcode from users where userId='"+userId+"') and users.userId<>'"+userId+"' order by x.at ASC;"
+    query = user.matching_query()
+    print(query)
     cur.execute(query)
     connection.commit()
-    x = None; y = None
+    other = None
     for row in cur:
-        x = row
+        print(row)
+        other = User.new(row, user.other)
+        if other.role == "server":
+            other.menu = row[-1]
         break
-    query = "select userId, name from users where userId='"+userId+"';"
-    cur.execute(query)
-    connection.commit()
-    for row in cur:
-        y=row
-    if role=="receiver":
-        x, y = y, x
 
-    receiver=x
-    server=y
-
+    print(user, other)
     if IS_TESTING:
         return True
-    push_message = lambda a, b: line_bot_api.push_message(a[0], TextSendMessage(text=b[1]+"さんとマッチングしました！"))
-    for a, b in zip([x, y], [y, x]):
+    push_message = lambda a, b: line_bot_api.push_message(a.userId, TextSendMessage(text=b.match_with()))
+    users = [user, other]
+    for a, b in zip(users, users[::-1]):
         try:
             push_message(a, b)
         except:

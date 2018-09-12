@@ -36,7 +36,6 @@ class TestSujata(unittest.TestCase):
         self.text_message = TextSendMessage(text=self.text)
         self.message = [{"type":"text", "text":self.text}]
 
-    """
     def test_access_index(self):
         response = self.app.get('/')
         assert response.status_code == 200
@@ -52,7 +51,6 @@ class TestSujata(unittest.TestCase):
         assert "郵便番号を正しく入力してください" == match_userId(self.userId, invalid_zip1, sZIP)
         assert "郵便番号を正しく入力してください" == match_userId(self.userId, invalid_zip2, sZIP)
         assert "1234567登録完了" == match_userId(self.userId, "1234567", sZIP)
-    """
 
     def test_matching(self):
         """
@@ -69,6 +67,7 @@ class TestSujata(unittest.TestCase):
             if r:
                 res.append(r)
 
+        print(res)
         assert len(res) == 2
         assert res[0][0] == self.users[2]
         assert res[0][1] == self.users[1]
