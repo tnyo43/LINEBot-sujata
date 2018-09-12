@@ -1,5 +1,6 @@
 import random
 import string
+import psycopg2
 
 class User:
     def __init__(self, userId, name, zipcode):
@@ -38,6 +39,9 @@ class User:
             return None
         return "delete from " + self.role + "s where userId='" + self.userId + "';"
 
+    def wait_matching_message(self):
+        return "マッチングするまでお待ちください"
+
     @staticmethod
     def find_query(userId):
         return "select *from users where userid='" + userId + "';"
@@ -73,21 +77,25 @@ class Server(User):
     def register_query(self):
         return "insert into servers values('" + self.userId + "', '" + self.menu + "', now());"
 
-    def matching_query(self):
-        return "select users.*, from users inner join receivers as x on x.userId=users.userId where users.zipcode in (select zipcode from users where userId='"+self.userId+"') and users.userId<>'"+self.userId+"' order by x.at ASC;"
+    def matching_query(self, himself=False):
+        query = "select users.* from users inner join receivers as x on x.userId=users.userId where users.zipcode in (select zipcode from users where userId='"+self.userId+"') "
+        if not himself:
+            query += "and users.userId<>'"+self.userId+"' "
+        query += "order by x.at ASC;"
+        return query
 
-    def match_with(self):
+    def match_with_message(self):
         return self.name + "さんとマッチングしました。\nメニューは" + self.menu + "です！"
+
+    def wait_matching_message(self):
+        res = self.menu + "で登録しました。\n"
+        res += super().wait_matching_message()
+        res += "写真があれば投稿してください"
+        return res
 
     def request(self):
         """
         receiverを募る
-        """
-        pass
-
-    def upload(self):
-        """
-        写真をアップロードする
         """
         pass
 
@@ -100,10 +108,14 @@ class Receiver(User):
     def register_query(self):
         return  "insert into receivers values('" + self.userId + "', now());"
 
-    def matching_query(self):
-        return "select users.*, servers.menu from users inner join servers on servers.userId=users.userId where users.zipcode in (select zipcode from users where userId='"+self.userId+"') and users.userId<>'"+self.userId+"' order by servers.at ASC;"
+    def matching_query(self, himself=False):
+        query = "select users.*, servers.menu from users inner join servers on servers.userId=users.userId where users.zipcode in (select zipcode from users where userId='"+self.userId+"') "
+        if not himself:
+            query += " and users.userId<>'"+self.userId+"' "
+        query += " order by servers.at ASC;"
+        return query
 
-    def match_with(self):
+    def match_with_message(self):
         return self.name + "さんとマッチングしました。"
 
     def request(self):

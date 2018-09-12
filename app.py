@@ -1,4 +1,7 @@
 import os
+from io import BytesIO
+from datetime import datetime
+from PIL import Image
 from flask import Flask, request, abort
 
 from linebot import (
@@ -8,7 +11,7 @@ from linebot.exceptions import (
     InvalidSignatureError
 )
 from linebot.models import (
-    MessageEvent, TextMessage, TextSendMessage, StickerMessage, StickerSendMessage
+    MessageEvent, TextMessage, TextSendMessage, StickerMessage, StickerSendMessage, ImageMessage, ImageSendMessage
 )
 
 import json
@@ -21,6 +24,7 @@ from models.psudeDB import PsudeDB
 
 app = Flask(__name__)
 
+SUJATA_URL = os.getenv('SUJATA_URL', 'https://sujata-linebot.herokuapp.com') + '/'
 CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN', None)
 CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET', None)
 
@@ -75,6 +79,12 @@ def send_message(userId, text):
     else:
         line_bot_api.push_message(userId, TextSendMessage(text))
         r.set(MESSAGE+userId, "SENT")
+
+def send_image(userId, url):
+    line_bot_api.push_message(userId, ImageSendMessage(
+        original_content_url=SUJATA_URL+url,
+        preview_image_url=SUJATA_URL+url
+    ))
 
 def set_state(userId, state):
     if not IS_TESTING:
@@ -199,12 +209,12 @@ def register_role(userId, role, menu=None):
         print("no user")
         return
 
-    text = ""
     if role == "server":
         user.menu = menu
-        text += user.menu + "で登録しました。\n"
 
-    send_message(userId, text+"マッチングするまでお待ちください")
+    text = user.wait_matching_message()
+
+    send_message(userId, text)
 
     def access_database():
         # 同じユーザーが登録しているなら更新
@@ -234,27 +244,29 @@ def register_server(userId):
         return register_role(userId, "server", menu)
 
 def matching(user):
-    # serversテーブルで同じ街の人を検索する
+    # serversテーブルで同じ街の人を検索する。()内のTrueをのぞけば自分自信を検索しない
     query = user.matching_query()
-    print(query)
     cur.execute(query)
     connection.commit()
     other = None
     for row in cur:
-        print(row)
         other = User.new(row, user.other)
         if other.role == "server":
             other.menu = row[-1]
         break
 
-    print(user, other)
     if IS_TESTING:
         return True
-    push_message = lambda a, b: line_bot_api.push_message(a.userId, TextSendMessage(text=b.match_with()))
+    push_message = lambda a, b: line_bot_api.push_message(a.userId, TextSendMessage(text=b.match_with_message()))
     users = [user, other]
     for a, b in zip(users, users[::-1]):
         try:
             push_message(a, b)
+            print(a)
+            if a.role == "receiver":
+                print("send")
+                print(get_user_image(b.userId))
+                send_image(a.userId, get_user_image(b.userId))
         except:
             pass
 
@@ -288,7 +300,9 @@ def callback():
     dic = json.loads(body)
     userId = dic["events"][0]["source"]["userId"]
     r.set(MESSAGE+userId, "NOT_YET")
-    if dic["events"][0]["message"]["type"] == "text":
+
+    typ = dic["events"][0]["message"]["type"]
+    if typ == "text":
         text = dic["events"][0]["message"]["text"]
         print(text)
         if not match_function(userId, text):
@@ -301,6 +315,33 @@ def callback():
     except InvalidSignatureError:
         abort(400)
     return 'OK'
+
+def get_user_image(userId):
+    filenames = [f for f in os.listdir('static') if userId in f]
+    if len(filenames) == 0:
+        return None
+    return 'static/' + filenames[0]
+
+@handler.add(MessageEvent, message=ImageMessage)
+def handle_image_message(event):
+    userId = event.source.user_id
+
+    def content_to_image(userId, content):
+        image = Image.open(BytesIO(message_content.content))
+        ratio = max(min(600, image.width)/image.width, min(600, image.height)/image.height)
+
+        same_userId_filenames = [f for f in os.listdir('static') if userId in f]
+        for filename in same_userId_filenames:
+            os.remove('static/'+filename)
+
+        url = "static/" + userId + "-" + datetime.now().strftime("%Y%m%d%H%M%S") + ".jpg"
+        return (image.resize((int(image.width*ratio), int(image.height*ratio))), url)
+
+    message_id = event.message.id
+    message_content = line_bot_api.get_message_content(message_id)
+    image, url = content_to_image(userId, message_content.content)
+
+    image.save(url, 'JPEG', quality=100, optimize=True)
 
 @handler.add(MessageEvent, message=StickerMessage)
 def handle_sticker_message(event):
