@@ -1,9 +1,10 @@
 import os
+import json
+import threading
 from io import BytesIO
 from datetime import datetime
 from PIL import Image
 from flask import Flask, request, abort
-
 from linebot import (
     LineBotApi, WebhookHandler
 )
@@ -13,17 +14,12 @@ from linebot.exceptions import (
 from linebot.models import (
     MessageEvent, TextMessage, TextSendMessage, StickerMessage, StickerSendMessage, ImageMessage, ImageSendMessage
 )
-
-import json
-import threading
-import redis
-import psycopg2
-
 from models.user import User, Server, Receiver
 from models.psudeDB import PsudeDB
+from models.DB import DB
+
 
 app = Flask(__name__)
-
 SUJATA_URL = os.getenv('SUJATA_URL', 'https://sujata-linebot.herokuapp.com') + '/'
 CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN', None)
 CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET', None)
@@ -38,23 +34,6 @@ if CHANNEL_SECRET is None:
 line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(CHANNEL_SECRET)
 
-# redisの接続
-REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379')
-DATABASE_INDEX = 0
-pool = redis.ConnectionPool.from_url(REDIS_URL, db=DATABASE_INDEX)
-r = redis.StrictRedis(connection_pool=pool)
-
-# postgreの接続
-connection_config = {
-    'host': os.getenv("DB_HOST", None),
-    'port': '5432',
-    'database': os.getenv("DB_NAME", None),
-    'user': os.getenv("POSTGRE_USER", None),
-    'password': os.getenv("POSTGRE_PASS", None)
-}
-connection = psycopg2.connect(**connection_config, sslmode='require')
-cur = connection.cursor()
-
 # for unittest
 IS_TESTING = False
 def set_is_testing(b):
@@ -65,6 +44,7 @@ psude_db = None
 def set_psude_db():
     global psude_db
     psude_db = PsudeDB()
+db = DB()#TODO:IS_TESTで変数dbの中身を分ける.
 
 # state
 sNAME, sZIP, sMENU = range(3)
@@ -73,12 +53,13 @@ MESSAGE = "message"
 NAME = "name"
 ZIP = "zip"
 
+
 def send_message(userId, text):
     if IS_TESTING:
         return text
     else:
         line_bot_api.push_message(userId, TextSendMessage(text))
-        r.set(MESSAGE+userId, "SENT")
+        db.save_value(userId, MESSAGE, "SENT")
 
 def send_image(userId, url):
     line_bot_api.push_message(userId, ImageSendMessage(
@@ -86,83 +67,26 @@ def send_image(userId, url):
         preview_image_url=SUJATA_URL+url
     ))
 
-def set_state(userId, state):
-    if not IS_TESTING:
-        r.set(userId, state)
-
-def get_state(userId):
-    return int(r.get(userId))
-
-def save_value(userId, key, value):
-    r.set(key+userId, value)
-
-def get_value(userId, key, delete=False):
-    value = r.get(key+userId)
-    if value:
-        value = value.decode('utf-8')
-    if delete:
-        r.delete(key+userId)
-    return value
-
-def get_values(userId, keys, delete=False):
-    dic = {}
-    for key in keys:
-        value = r.get(key+userId)
-        dic[key] = value.decode('utf-8') if value else None
-        if delete:
-            r.delete(key+userId)
-    return dic
-
-def register_user(user):
-    global psude_db
-    if IS_TESTING:
-        psude_db.store_user(user)
-        return
-    dic = get_values(user.userId, [NAME, ZIP], delete=True)
-    user.name = dic[NAME]
-    user.zipcode = dic[ZIP]
-    query = user.register_query()
-    try:
-        cur.execute(query)
-    except:
-        pass
-    connection.commit()
-
-def get_user(userId, role=""):
-    if IS_TESTING:
-        return psude_db.get_user(userId)
-
-    query = User.find_query(userId)
-    cur.execute(query)
-    for x in cur:
-        return User.new(x, role)
-
-def get_user_info(userId, void=True):
-    user = get_user(userId)
-    if not user:
-        encourage_register(userId)
-        return
-    text = "ユーザー名：" + user.name + "\n"
-    text += "郵便番号：\u3012" + user.zipcode
-    if not void:
-        return text
-    else:
-        send_message(user.userId, text)
-
 def match_userId(userId, message, state=None):
     try:
         user = None
-        user = get_user(userId)
+        if IS_TESTING:
+            user = psude_db.get_user(userId)
+        else:
+            user = db.get_user(userId)
         if state == None:
-            state = int(get_state(userId))
+            state = int(db.get_state(userId))
+        #TODO:userかstateがNoneのときencourage_register関数を実行すべきか.
+        
         text = message
-
+        
         delete = False
         if state == sNAME:
             if not IS_TESTING:
-                save_value(userId, NAME, text)
+                db.save_value(userId, NAME, text)
             if len(text) <= 20:
-                set_state(userId, sZIP)
+                if not IS_TESTING:
+                    db.set_state(userId, sZIP)
                 return send_message(userId, text+"さんですね。郵便番号を教えてください")
             else:
                 return send_message(userId, "名前が長すぎます。入力し直してください")
@@ -171,23 +95,25 @@ def match_userId(userId, message, state=None):
             if len(text) != 7 or not text.isnumeric():
                 return send_message(userId, "郵便番号を正しく入力してください")
             else:
-                save_value(userId, ZIP, zipcode)
+                db.save_value(userId, ZIP, zipcode)
                 # DBに保存して登録
                 if not IS_TESTING:
-                    name = get_value(userId, NAME)
+                    name = db.get_value(userId, NAME)
                     user = User(userId, name, zipcode)
-                    register_user(user)
+                    db.register_user(user, NAME, ZIP)
                     text = user.show_info()
+                    db.set_state(userId, sMENU)
                     send_message(userId, text + "\nで登録しました")
                 else:
+                    psude_db.store_user(user)
                     return send_message(userId, message + "登録完了")
                 delete = True
         elif state == sMENU:
             menu = text
-            save_value(userId, MENU, menu)
+            db.save_value(userId, MENU, menu)
             register_server(userId)
         if delete:
-            r.delete(userId)
+            db.delete_state(userId)
     except TypeError as e:
         print(e)
 
@@ -197,11 +123,11 @@ def encourage_register(userId):
 
 def registration(userId):
     if not IS_TESTING:
-        set_state(userId, sNAME)
+        db.set_state(userId, sNAME)
     return send_message(userId, "ユーザー登録をします。\nニックネームを教えてください")
 
 def register_role(userId, role, menu=None):
-    user = get_user(userId, role)
+    user = db.get_user(userId, role)
     other = "receiver" if(role == "server") else "server"
 
     if not user:
@@ -232,16 +158,29 @@ def register_role(userId, role, menu=None):
     else:
         threading.Thread(target=access_database).start()
 
+
 def register_receiver(userId):
     return register_role(userId, "receiver")
 
 def register_server(userId):
-    menu = get_value(userId, MENU, delete=True)
+    menu = db.get_value(userId, MENU, delete=True)
     if menu == None:
-        set_state(userId, sMENU)
+        db.set_state(userId, sMENU)
         send_message(userId, "メニューを教えてください")
     else:
         return register_role(userId, "server", menu)
+
+def get_user_info(userId, void=True):
+    user = db.get_user(userId)
+    if not user:
+        encourage_register(userId)
+        return
+    text = "ユーザー名：" + user.name + "\n"
+    text += "郵便番号：\u3012" + user.zipcode
+    if not void:
+        return text
+    else:
+        send_message(user.userId, text)
 
 def matching(user):
     # serversテーブルで同じ街の人を検索する。()内のTrueをのぞけば自分自信を検索しない
@@ -299,8 +238,8 @@ def callback():
 
     dic = json.loads(body)
     userId = dic["events"][0]["source"]["userId"]
-    r.set(MESSAGE+userId, "NOT_YET")
 
+    db.save_value(userId, MESSAGE, "NOT_YET")
     typ = dic["events"][0]["message"]["type"]
     if typ == "text":
         text = dic["events"][0]["message"]["text"]
@@ -310,8 +249,11 @@ def callback():
 
     # handle webhook body
     try:
-        if r.get(MESSAGE+userId).decode('utf-8') != "SENT":
+        value = db.get_value(userId, MESSAGE)
+        if value != "SENT":
             handler.handle(body, signature)
+        else:
+            print("is sent.\n")
     except InvalidSignatureError:
         abort(400)
     return 'OK'
@@ -349,6 +291,7 @@ def handle_sticker_message(event):
             event.reply_token,
             StickerSendMessage(package_id='1',sticker_id='1'))
 
+# REVIEW: send_message関数と統合してもよいか．
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     userId = event.source.user_id
@@ -356,7 +299,7 @@ def handle_message(event):
     line_bot_api.reply_message(
         event.reply_token,
         TextSendMessage(text=text))
-    r.delete(MESSAGE+userId)
+    db.delete_value(userId, MESSAGE)
 
 if __name__ == "__main__":
     app.run()
