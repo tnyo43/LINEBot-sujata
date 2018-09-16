@@ -37,7 +37,10 @@ class DB:
         r.set(userId, state)
 
     def get_state(self, userId):
-        return int(r.get(userId))
+        user_state = r.get(userId)
+        if user_state is None:
+            return None
+        return int(user_state)
 
     def save_value(self, userId, key, value):
         r.set(key+userId, value)

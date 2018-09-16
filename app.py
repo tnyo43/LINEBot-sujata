@@ -67,64 +67,74 @@ def send_image(userId, url):
         preview_image_url=SUJATA_URL+url
     ))
 
-def match_userId(userId, message, state=None):
-    try:
-        user = None
-        if IS_TESTING:
-            user = psude_db.get_user(userId)
+def ask_name(userId, received_text):
+    ask_text = ""
+
+    if not IS_TESTING:
+        db.save_value(userId, NAME, received_text)
+    
+    if len(received_text) <= 20:
+        if not IS_TESTING:
+            db.set_state(userId, sZIP)
+        ask_text = received_text+"さんですね。郵便番号を教えてください"
+    else:
+        ask_text = "名前が長すぎます。入力し直してください"
+    return ask_text
+
+def ask_zip(userId, received_text):
+    ask_text = ""
+
+    if len(received_text) != 7 or not received_text.isnumeric():
+        ask_text = "郵便番号を正しく入力してください"
+    else:
+        zipcode = received_text
+        db.save_value(userId, ZIP, zipcode)
+        # DBに保存して登録
+        if not IS_TESTING:
+            name = db.get_value(userId, NAME)
+            user = User(userId, name, zipcode)
+            db.register_user(user, NAME, ZIP)
+            received_text = user.show_info()
+            db.set_state(userId, sMENU)
+            ask_text = received_text + "\nで登録しました"
         else:
-            user = db.get_user(userId)
-        if state == None:
-            state = int(db.get_state(userId))
-        #TODO:userかstateがNoneのときencourage_register関数を実行すべきか.
-        
-        text = message
-        
-        delete = False
-        if state == sNAME:
-            if not IS_TESTING:
-                db.save_value(userId, NAME, text)
-            if len(text) <= 20:
-                if not IS_TESTING:
-                    db.set_state(userId, sZIP)
-                return send_message(userId, text+"さんですね。郵便番号を教えてください")
-            else:
-                return send_message(userId, "名前が長すぎます。入力し直してください")
-        elif state == sZIP:
-            zipcode = text
-            if len(text) != 7 or not text.isnumeric():
-                return send_message(userId, "郵便番号を正しく入力してください")
-            else:
-                db.save_value(userId, ZIP, zipcode)
-                # DBに保存して登録
-                if not IS_TESTING:
-                    name = db.get_value(userId, NAME)
-                    user = User(userId, name, zipcode)
-                    db.register_user(user, NAME, ZIP)
-                    text = user.show_info()
-                    db.set_state(userId, sMENU)
-                    send_message(userId, text + "\nで登録しました")
-                else:
-                    psude_db.store_user(user)
-                    return send_message(userId, message + "登録完了")
-                delete = True
-        elif state == sMENU:
-            menu = text
-            db.save_value(userId, MENU, menu)
-            register_server(userId)
-        if delete:
-            db.delete_state(userId)
-    except TypeError as e:
-        print(e)
+            psude_db.store_user(user)
+            ask_text =  message + "登録完了"
+        delete = True
+    return ask_text
+
+def match_userId(userId, received_text, state=None):
+    user = None
+    if IS_TESTING:
+        user = psude_db.get_user(userId)
+    else:
+        user = db.get_user(userId)
+
+    if state == None:
+        state = db.get_state(userId)
+    if state == None:
+        return None
+    
+    if state == sNAME:
+        return ask_name(userId, received_text)
+    elif state == sZIP:
+        return ask_zip(userId, received_text)
+    elif state == sMENU:
+        menu = received_text
+        db.save_value(userId, MENU, menu)
+        return register_server(userId)
+
 
 def encourage_register(userId):
     text="ユーザーが見つかりません。\n「ユーザー登録」と話しかけてください"
-    send_message(userId, text)
+    return text
 
 def registration(userId):
+    print("^^^^^^^^^^^^^^^^\n\n\n")
     if not IS_TESTING:
         db.set_state(userId, sNAME)
-    return send_message(userId, "ユーザー登録をします。\nニックネームを教えてください")
+        print("chk", db.get_state(userId))
+    return "ユーザー登録をします。\nニックネームを教えてください"
 
 def register_role(userId, role, menu=None):
     user = db.get_user(userId, role)
@@ -140,7 +150,7 @@ def register_role(userId, role, menu=None):
 
     text = user.wait_matching_message()
 
-    send_message(userId, text)
+    return text
 
     def access_database():
         # 同じユーザーが登録しているなら更新
@@ -166,7 +176,7 @@ def register_server(userId):
     menu = db.get_value(userId, MENU, delete=True)
     if menu == None:
         db.set_state(userId, sMENU)
-        send_message(userId, "メニューを教えてください")
+        return "メニューを教えてください"
     else:
         return register_role(userId, "server", menu)
 
@@ -177,10 +187,7 @@ def get_user_info(userId, void=True):
         return
     text = "ユーザー名：" + user.name + "\n"
     text += "郵便番号：\u3012" + user.zipcode
-    if not void:
-        return text
-    else:
-        send_message(user.userId, text)
+    return text
 
 def matching(user):
     # serversテーブルで同じ街の人を検索する。()内のTrueをのぞけば自分自信を検索しない
@@ -219,8 +226,7 @@ func_dic = {
 
 def match_function(userId, text):
     if text in func_dic.keys():
-        func_dic[text](userId)
-        return True
+        return func_dic[text](userId)
     return False
 
 @app.route("/")
@@ -240,20 +246,14 @@ def callback():
     userId = dic["events"][0]["source"]["userId"]
 
     db.save_value(userId, MESSAGE, "NOT_YET")
-    typ = dic["events"][0]["message"]["type"]
-    if typ == "text":
-        text = dic["events"][0]["message"]["text"]
-        print(text)
-        if not match_function(userId, text):
-            match_userId(userId,text)
 
     # handle webhook body
     try:
         value = db.get_value(userId, MESSAGE)
-        if value != "SENT":
-            handler.handle(body, signature)
-        else:
-            print("is sent.\n")
+        # if value != "SENT":
+        handler.handle(body, signature)
+        # else:
+            # print("is sent.\n")
     except InvalidSignatureError:
         abort(400)
     return 'OK'
@@ -291,15 +291,23 @@ def handle_sticker_message(event):
             event.reply_token,
             StickerSendMessage(package_id='1',sticker_id='1'))
 
-# REVIEW: send_message関数と統合してもよいか．
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     userId = event.source.user_id
-    text = "Hello, Linebot sujata\uD83C\uDF7C"
+    received_text = event.message.text
+    send_text = ""
+
+    send_text = match_function(userId, received_text)
+    if not send_text:
+        send_text = match_userId(userId, received_text)
+    
+    if not send_text:
+        send_text = "Hello, Linebot sujata\uD83C\uDF7C"
+        db.delete_value(userId, MESSAGE)
+
     line_bot_api.reply_message(
         event.reply_token,
-        TextSendMessage(text=text))
-    db.delete_value(userId, MESSAGE)
+        TextSendMessage(text=send_text))
 
 if __name__ == "__main__":
     app.run()
