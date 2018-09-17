@@ -130,7 +130,6 @@ def encourage_register(userId):
     return text
 
 def registration(userId):
-    print("^^^^^^^^^^^^^^^^\n\n\n")
     if not IS_TESTING:
         db.set_state(userId, sNAME)
         print("chk", db.get_state(userId))
@@ -141,16 +140,15 @@ def register_role(userId, role, menu=None):
     other = "receiver" if(role == "server") else "server"
 
     if not user:
-        encourage_register(userId)
         print("no user")
-        return
+        return encourage_register(userId)
 
     if role == "server":
         user.menu = menu
 
     text = user.wait_matching_message()
 
-    return text
+    send_message(userId, text)
 
     def access_database():
         # 同じユーザーが登録しているなら更新
@@ -183,8 +181,7 @@ def register_server(userId):
 def get_user_info(userId, void=True):
     user = db.get_user(userId)
     if not user:
-        encourage_register(userId)
-        return
+        return encourage_register(userId)
     text = "ユーザー名：" + user.name + "\n"
     text += "郵便番号：\u3012" + user.zipcode
     return text
