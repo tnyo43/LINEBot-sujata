@@ -76,8 +76,8 @@ class DB:
         query = user.register_query()
         try:
             cur.execute(query)
-        except:
-            pass
+        except Exception as e:
+            print(e)
         connection.commit()
 
     def get_user(self, userId, role=""):
@@ -90,3 +90,25 @@ class DB:
             return None
         for x in cur:
             return User.new(x, role)
+
+    #TODO:あとで消す.
+    def exe_query(self, query):
+        try:
+            cur.execute(query)
+            connection.commit()
+        except Exception as e:
+            print(e)
+            return False
+        return True
+
+    def get_other(self, user):
+        other = None
+        try:
+            for row in cur:
+                other = User.new(row, user.other)
+                if other.role == "server":
+                    other.menu = row[-1]
+                break
+        except Exception as e:
+            print(e)
+        return other

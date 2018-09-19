@@ -14,10 +14,12 @@ LINE boot awards2018に応募する作品
 
 - Create table servers (
 	UserId character(33),
+	menu character(33),
 	at time
 );
 
 - Create table receivers (
 	userId character(33),
+	menu character(33),
 	at time
 );
