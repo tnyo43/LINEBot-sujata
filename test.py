@@ -26,7 +26,7 @@ class TestSujata(unittest.TestCase):
             Server(None, "ろくろう", "0000000"),
         ]
         for user in self.users:
-            register_user(user)
+            db.register_user(user, NAME, ZIP)
 
     def setUp(self):
         self.app = app.test_client()

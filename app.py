@@ -45,7 +45,8 @@ psude_db = None
 def set_psude_db():
     global psude_db
     psude_db = PsudeDB()
-db = DB()#TODO:IS_TESTで変数dbの中身を分ける.
+#FIXME:DBAdapterクラスを作成し，メンバにIS_TEST，DB,PsudeDBインスタンスを持って管理.
+db = DB()
 
 # state
 sNAME, sZIP, sMENU = range(3)

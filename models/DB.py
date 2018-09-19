@@ -27,7 +27,7 @@ connection_config = {
     'user': POSTGRE_USER,
     'password': POSTGRE_PASS
 }
-connection = psycopg2.connect(**connection_config)#, sslmode='require')
+connection = psycopg2.connect(**connection_config, sslmode='require')
 cur = connection.cursor()
 
 
@@ -77,7 +77,7 @@ class DB:
         try:
             cur.execute(query)
         except Exception as e:
-            print(e)
+            print("register_user",e)
         connection.commit()
 
     def get_user(self, userId, role=""):
@@ -91,7 +91,7 @@ class DB:
         for x in cur:
             return User.new(x, role)
 
-    #TODO:あとで消す.
+    #FIXME:あとで消す.
     def exe_query(self, query):
         try:
             cur.execute(query)
