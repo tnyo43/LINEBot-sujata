@@ -11,7 +11,7 @@ from linebot.exceptions import (
     InvalidSignatureError
 )
 from linebot.models import (
-    MessageEvent, TextMessage, TextSendMessage, StickerMessage, StickerSendMessage, ImageMessage, ImageSendMessage
+    MessageEvent, TextMessage, TextSendMessage, StickerMessage, StickerSendMessage, ImageMessage, ImageSendMessage, TemplateSendMessage, ImageCarouselTemplate, ImageCarouselColumn, PostbackAction, ConfirmTemplate, MessageTemplateAction
 )
 
 import json
@@ -311,6 +311,14 @@ def match_function(userId, text):
         return True
     return False
 
+question_template_message = TemplateSendMessage(
+    alt_text='ImageCarousel template',
+    template=ConfirmTemplate(text='この内容でいいですか', actions=[
+        MessageTemplateAction(label='Yes', text='はい'),
+        MessageTemplateAction(label='No', text='いいえ')
+    ])
+)
+
 @app.route("/")
 def index():
     return "Hello, LineBot sujata"
@@ -384,9 +392,12 @@ def handle_sticker_message(event):
 def handle_message(event):
     userId = event.source.user_id
     text = "Hello, Linebot sujata\uD83C\uDF7C"
+    line_bot_api.reply_message(event.reply_token,question_template_message)
+    """
     line_bot_api.reply_message(
         event.reply_token,
         TextSendMessage(text=text))
+    """
     r.delete(MESSAGE+userId)
 
 if __name__ == "__main__":
