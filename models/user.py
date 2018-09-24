@@ -1,6 +1,7 @@
 import random
 import string
 import psycopg2
+import datetime
 
 class User:
     def __init__(self, userId, name, zipcode):
@@ -68,6 +69,8 @@ class Server(User):
         self.role = "server"
         self.other = "receiver"
         self.menu = ""
+        self.done = False
+        self.completeAt = None
 
     def __str__(self):
         res = super().__str__()[:-1]
@@ -75,7 +78,16 @@ class Server(User):
         return res
 
     def register_query(self):
-        return "insert into servers values('" + self.userId + "', '" + self.menu + "', now());"
+        q = "insert into servers values('" + self.userId + "', '" + self.menu + "', now(), " + str(self.done) + ", "
+        if self.done:
+            q += "now()"
+        else:
+            print(self.completeAt)
+            print(type(self.completeAt))
+            q += self.completeAt.strftime("to_timestamp('%Y-%m-%d %H:%M:%S','YYYY-MM-DD HH24:MI:SS')")
+        q += ");"
+        print(q)
+        return q
 
     def matching_query(self, himself=False):
         query = "select users.* from users inner join receivers as x on x.userId=users.userId where users.zipcode in (select zipcode from users where userId='"+self.userId+"') "
