@@ -392,7 +392,8 @@ def handle_sticker_message(event):
 def handle_message(event):
     userId = event.source.user_id
     text = "Hello, Linebot sujata\uD83C\uDF7C"
-    line_bot_api.reply_message(event.reply_token,question_template_message)
+    line_bot_api.push_message(userId, question_template_message)
+#    line_bot_api.reply_message(event.reply_token,question_template_message)
     """
     line_bot_api.reply_message(
         event.reply_token,
