@@ -80,6 +80,17 @@ class DB:
             print("register_user",e)
         connection.commit()
 
+    def register_role(self, user):
+        # 同じユーザの古い登録データを削除
+        query = "DELETE FROM "+user.role+"s WHERE userId='"+user.userId+"';"
+        cur.execute(query)
+        query = user.register_query()
+        try:
+            cur.execute(query)
+        except Exception as e:
+            print("register_role",e)
+        connection.commit()
+
     def get_user(self, userId, role=""):
         query = User.find_query(userId)
         try:

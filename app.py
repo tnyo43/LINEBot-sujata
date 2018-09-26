@@ -49,12 +49,12 @@ def set_psude_db():
 db = DB()
 
 # state
-sNAME, sZIP, sMENU = range(3)
+sNAME, sZIP, sMENU, sMENU_NOT_COOKED_YET, sCOMPLETE_AT, sPHOTO = range(6)
 MENU = "menu"
 MESSAGE = "message"
 NAME = "name"
 ZIP = "zip"
-
+COMPLETE_AT = "comp_at"
 
 def send_image(userId, url):
     line_bot_api.push_message(userId, ImageSendMessage(
@@ -106,7 +106,6 @@ def match_userId(userId, received_text, state=None):
 
     if state is None:
         state = db.get_state(userId)
-    
     if state == sNAME:
         return receive_name(userId, received_text)
     elif state == sZIP:
@@ -114,7 +113,17 @@ def match_userId(userId, received_text, state=None):
     elif state == sMENU:
         menu = received_text
         db.save_value(userId, MENU, menu)
-        return register_server(userId)
+        db.set_state(userId, sPHOTO)
+        send_message(userId, "料理の写真を送ってください")
+    elif state == sMENU_NOT_COOKED_YET:
+        menu = received_text
+        db.save_value(userId, MENU, menu)
+        send_message(userId, "完成予定時刻を教えてください\n（例）午後6時14分→18:14\n　　　午前9時5分→09:05")
+        db.set_state(userId, sCOMPLETE_AT)
+    elif state == sCOMPLETE_AT:
+        complete_at = received_text
+        db.save_value(userId, COMPLETE_AT, complete_at)
+        register_server_not_cooked_yet(userId)
 
 def encourage_register(userId):
     text="ユーザーが見つかりません。\n「ユーザー登録」と話しかけてください"
@@ -137,7 +146,7 @@ def get_user_info(userId, void=True):
     else:
         return send_message(user.userId, text)
 
-def register_role(userId, role, menu=None):
+def register_role(userId, role, menu=None, cooked=True, completeAt=None):
     user = db.get_user(userId, role)
     other = "receiver" if(role == "server") else "server"
     
@@ -147,10 +156,21 @@ def register_role(userId, role, menu=None):
 
     if role == "server":
         user.menu = menu
+        user.done = cooked
+        if not cooked:
+            hour = int(completeAt[:2])
+            minute = int(completeAt[3:])
+            compAt = datetime.now().replace(hour=hour, minute=minute)
+            print(compAt)
+            user.completeAt = compAt
+
 
     text = user.wait_matching_message()
     send_message(userId, text)
-    
+
+    db.register_role(user)
+
+    """
     if IS_TESTING:
         psude_db.store_role(user, role)
         return psude_db.matching(user, role)
@@ -158,22 +178,29 @@ def register_role(userId, role, menu=None):
         file_name = get_user_image(userId)
         if not file_name:
             threading.Thread(target=matching.access_database(user,db,file_name)).start()
+    """
 
 def register_receiver(userId):
     return register_role(userId, "receiver")
 
-def register_server(userId):
+def register_server(userId, cooked=True, completeAt=None):
     menu = db.get_value(userId, MENU, delete=True)
     if menu == None:
-        db.set_state(userId, sMENU)
+        db.set_state(userId, sMENU if cooked else sMENU_NOT_COOKED_YET)
         send_message(userId, "メニューを教えてください")
     else:
-        return register_role(userId, "server", menu)
+        return register_role(userId, "server", menu, cooked=cooked, completeAt=completeAt)
+
+def register_server_not_cooked_yet(userId):
+    completeAt = db.get_value(userId, COMPLETE_AT, delete=True)
+    register_server(userId, cooked=False, completeAt=completeAt)
 
 func_dic = {
     "ユーザー登録":registration,
     "ユーザー情報":get_user_info,
     "お腹すいた":register_receiver,
+    "料理を作るよ":register_server_not_cooked_yet,
+    "り":register_server_not_cooked_yet,
     "料理ができた":register_server,
     "へいお待ち！てやんでい":register_server,
 }
@@ -234,7 +261,10 @@ def handle_image_message(event):
     message_content = line_bot_api.get_message_content(message_id)
     image, url = content_to_image(userId, message_content.content)
 
-    image.save(url, 'JPEG', quality=100, optimize=True)
+    state = db.get_state(userId)
+    if state == sPHOTO:
+        image.save(url, 'JPEG', quality=100, optimize=True)
+        register_server(userId)
 
 @handler.add(MessageEvent, message=StickerMessage)
 def handle_sticker_message(event):
