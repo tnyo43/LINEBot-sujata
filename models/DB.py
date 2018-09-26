@@ -36,10 +36,12 @@ class DB:
     def set_state(self, userId, state):
         r.set(userId, state)
 
-    def get_state(self, userId):
+    def get_state(self, userId, delete=False):
         user_state = r.get(userId)
         if user_state is None:
             return None
+        if delete:
+            r.delete(userId)
         return int(user_state)
 
     def save_value(self, userId, key, value):
@@ -64,7 +66,7 @@ class DB:
 
     def delete_state(self, userId):
         r.delete(userId)
-        
+
     def delete_value(self, userId, key):
         r.delete(key+userId)
 

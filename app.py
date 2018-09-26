@@ -12,12 +12,13 @@ from linebot.exceptions import (
     InvalidSignatureError
 )
 from linebot.models import (
-    MessageEvent, TextMessage, TextSendMessage, StickerMessage, StickerSendMessage, ImageMessage, ImageSendMessage
+    MessageEvent, TextMessage, TextSendMessage, StickerMessage, StickerSendMessage, ImageMessage, ImageSendMessage, TemplateSendMessage, ImageCarouselTemplate, ImageCarouselColumn, PostbackAction, ConfirmTemplate, MessageTemplateAction
 )
 from models.user import User, Server, Receiver
 from models.psudeDB import PsudeDB
 from models.DB import DB
 import matching
+import carousel_template as carousel_temp
 
 
 app = Flask(__name__)
@@ -49,7 +50,7 @@ def set_psude_db():
 db = DB()
 
 # state
-sNAME, sZIP, sMENU, sMENU_NOT_COOKED_YET, sCOMPLETE_AT, sPHOTO = range(6)
+sNAME, sZIP, sMENU, sMENU_NOT_COOKED_YET, sCOMPLETE_AT, sPHOTO, sSERVER_REGISTER = range(7)
 MENU = "menu"
 MESSAGE = "message"
 NAME = "name"
@@ -61,13 +62,17 @@ def send_image(userId, url):
         original_content_url=SUJATA_URL+url,
         preview_image_url=SUJATA_URL+url
     ))
-    
+
 def send_message(userId, text):
     if IS_TESTING:
         return text
     else:
         line_bot_api.push_message(userId, TextSendMessage(text))
         db.save_value(userId, MESSAGE, "SENT")
+
+def send_carousel(userId, carousel):
+    line_bot_api.push_message(userId, carousel)
+    db.save_value(userId, MESSAGE, "SENT")
 
 def receive_name(userId, received_text):
     if not IS_TESTING:
@@ -105,7 +110,7 @@ def match_userId(userId, received_text, state=None):
         user = db.get_user(userId)
 
     if state is None:
-        state = db.get_state(userId)
+        state = db.get_state(userId, delete=True)
     if state == sNAME:
         return receive_name(userId, received_text)
     elif state == sZIP:
@@ -124,6 +129,26 @@ def match_userId(userId, received_text, state=None):
         complete_at = received_text
         db.save_value(userId, COMPLETE_AT, complete_at)
         register_server_not_cooked_yet(userId)
+    elif state == sSERVER_REGISTER:
+        menu = db.get_value(userId, MENU, delete=True)
+        completeAt = db.get_value(userId, COMPLETE_AT, delete=True)
+        print(received_text)
+        if received_text == "はい":
+            user = Server(userId)
+            user.menu = menu
+
+            # 時間完成時間
+            user.done = (completeAt == None)
+            if not user.done:
+                hour = int(completeAt[:2])
+                minute = int(completeAt[3:])
+                compAt = datetime.now().replace(hour=hour, minute=minute)
+                user.completeAt = compAt
+            db.register_role(user)
+
+            send_message(userId, "登録完了しました")
+        else:
+            send_message(userId, "登録し直してください")
 
 def encourage_register(userId):
     text="ユーザーが見つかりません。\n「ユーザー登録」と話しかけてください"
@@ -161,14 +186,18 @@ def register_role(userId, role, menu=None, cooked=True, completeAt=None):
             hour = int(completeAt[:2])
             minute = int(completeAt[3:])
             compAt = datetime.now().replace(hour=hour, minute=minute)
-            print(compAt)
             user.completeAt = compAt
+        carousel = carousel_temp.server_register_confirmation_carousel(user)
+        send_carousel(userId, carousel)
+        db.set_state(userId, sSERVER_REGISTER)
+        """
+        text = user.wait_matching_message()
+        send_message(userId, text)
+        """
 
-
-    text = user.wait_matching_message()
-    send_message(userId, text)
-
-    db.register_role(user)
+    else:
+        # receiverなら無条件で登録できる
+        db.register_role(user)
 
     """
     if IS_TESTING:
@@ -184,7 +213,7 @@ def register_receiver(userId):
     return register_role(userId, "receiver")
 
 def register_server(userId, cooked=True, completeAt=None):
-    menu = db.get_value(userId, MENU, delete=True)
+    menu = db.get_value(userId, MENU)
     if menu == None:
         db.set_state(userId, sMENU if cooked else sMENU_NOT_COOKED_YET)
         send_message(userId, "メニューを教えてください")
@@ -192,7 +221,7 @@ def register_server(userId, cooked=True, completeAt=None):
         return register_role(userId, "server", menu, cooked=cooked, completeAt=completeAt)
 
 def register_server_not_cooked_yet(userId):
-    completeAt = db.get_value(userId, COMPLETE_AT, delete=True)
+    completeAt = db.get_value(userId, COMPLETE_AT)
     register_server(userId, cooked=False, completeAt=completeAt)
 
 func_dic = {
@@ -241,6 +270,7 @@ def get_user_image(userId):
     if len(filenames) == 0:
         return None
     return 'static/' + filenames[0]
+
 
 @handler.add(MessageEvent, message=ImageMessage)
 def handle_image_message(event):

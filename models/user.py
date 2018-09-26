@@ -66,7 +66,7 @@ class User:
         return cls(args[0], args[1], args[2])
 
 class Server(User):
-    def __init__(self, userId, name=None, zipcode=None):
+    def __init__(self, userId, name="", zipcode=""):
         super().__init__(userId, name, zipcode)
         self.role = "server"
         self.other = "receiver"
@@ -78,6 +78,9 @@ class Server(User):
         res = super().__str__()[:-1]
         res += ", メニュー：" + self.menu
         return res
+
+    def completeAt_string(self):
+        return self.completeAt.strftime("%H:%M")
 
     def register_query(self):
         q = "insert into servers values('" + self.userId + "', '" + self.menu + "', now(), " + str(self.done) + ", "
