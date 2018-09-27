@@ -16,6 +16,7 @@ from linebot.models import (
 )
 from utils.states import *
 from utils.send import *
+from utils.image_handler import *
 from models.user import User, Server, Receiver
 from models.psudeDB import PsudeDB
 from models.DB import DB
@@ -127,8 +128,18 @@ def match_userId(userId, received_text, state=None):
             db.register_role(user)
 
             send_message(userId, "登録完了しました")
+            matching.matching(user)
         else:
             send_message(userId, "登録し直してください")
+    elif state == sSERVER_CONFIRM:
+        answer = received_text
+        server = db.get_user(userId, "server")
+        receiver = db.get_other(server)
+        if answer == "マッチング":
+            send_message(userId, "相手の返信があるまでお待ちください")
+            matching.matching_ask_receiver(receiver=receiver, server=server)
+        else:
+            send_message(userId, "次にマッチングするまでお待ちください")
 
 def encourage_register(userId):
     text="ユーザーが見つかりません。\n「ユーザー登録」と話しかけてください"
@@ -178,8 +189,7 @@ def register_role(userId, role, menu=None, cooked=True, completeAt=None):
         # receiverなら無条件で登録できる
         db.register_role(user)
         send_message(userId, "マッチングするまでお待ちください")
-
-    matching.matching(user)
+        matching.matching(user)
     """
     if IS_TESTING:
         psude_db.store_role(user, role)
@@ -245,13 +255,6 @@ def callback():
     except InvalidSignatureError:
         abort(400)
     return 'OK'
-
-def get_user_image(userId):
-    filenames = [f for f in os.listdir('static') if userId in f]
-    if len(filenames) == 0:
-        return None
-    return 'static/' + filenames[0]
-
 
 @handler.add(MessageEvent, message=ImageMessage)
 def handle_image_message(event):

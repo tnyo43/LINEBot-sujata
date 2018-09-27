@@ -94,7 +94,8 @@ class DB:
         connection.commit()
 
     def get_user(self, userId, role=""):
-        query = User.find_query(userId)
+        query = User.find_query(userId, role)
+        print(query)
         try:
             cur.execute(query)
         except Exception as e:
@@ -115,6 +116,8 @@ class DB:
         return True
 
     def get_other(self, user):
+        query = user.matching_query(True)
+        self.exe_query(query)#FIXME
         other = None
         try:
             for row in cur:

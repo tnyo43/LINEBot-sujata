@@ -46,8 +46,11 @@ class User:
         return "マッチングするまでお待ちください"
 
     @staticmethod
-    def find_query(userId):
-        return "select *from users where userid='" + userId + "';"
+    def find_query(userId, role=""):
+        if role == "" or role == "receiver":
+            return "select *from users where userid='" + userId + "';"
+        elif role == "server":
+            return "SELECT u.userId, u.name, u.zipcode, s.done, s.completeAt, s.menu FROM users u, servers s WHERE u.userId='"+userId+"';"
 
     @staticmethod
     def new(args, role):
@@ -118,6 +121,16 @@ class Server(User):
         receiverを募る
         """
         pass
+
+    @classmethod
+    def _new(cls, args):
+        s = Server(args[0], args[1], args[2])
+        s.menu = args[-1].strip()
+        if len(args) == 6:
+            s.done = args[3]
+            if not s.done:
+                s.completeAt = args[4]
+        return s
 
 class Receiver(User):
     def __init__(self, userId, name, zipcode):

@@ -4,8 +4,9 @@ from linebot.models import (
 from utils.send import send_message, send_image, send_carousel, set_line_api
 from models.user import User, Server, Receiver
 from models.psudeDB import PsudeDB
-from carousel_template import server_match_carousel
+from carousel_template import server_match_carousel, receiver_match_carousel
 from models.DB import DB
+from utils.states import *
 import sys
 
 line_bot_api = None
@@ -28,24 +29,8 @@ def access_database(user, db, file_name, IS_TESTING):
 
 def matching(user):
     # serversテーブルで同じ街の人を検索する。()内のTrueをのぞけば自分自信を検索しない
-    query = user.matching_query(True)
-    db.exe_query(query)#FIXME
-
     other = db.get_other(user)
 
-    """
-    push_message = lambda a, b: line_bot_api.push_message(a.userId, TextSendMessage(text=b.match_with_message()))
-    users = [user, other]
-    for a, b in zip(users, users[::-1]):
-        try:
-            push_message(a, b)
-            print(a)
-            if a.role == "receiver":
-                print(get_user_image(b.userId))
-                app.send_image(a.userId, get_user_image(b.userId))
-        except Exception as e:
-            print(e)
-    """
     if other == None:
         return
 
@@ -60,3 +45,8 @@ def matching(user):
 
     # まずはserverだけに送って確認してもらう
     send_carousel(server.userId, server_match_carousel(server, receiver))
+    db.set_state(server.userId, sSERVER_CONFIRM)
+
+def matching_ask_receiver(receiver, server):
+    send_carousel(receiver.userId, receiver_match_carousel(receiver, server))
+    db.set_state(receiver.userId, sRECEIVER_CONFIRM)
