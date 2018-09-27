@@ -84,7 +84,7 @@ class DB:
 
     def register_role(self, user):
         # 同じユーザの古い登録データを削除
-        query = "DELETE FROM "+user.role+"s WHERE userId='"+user.userId+"';"
+        query = user.unregister_query()
         cur.execute(query)
         query = user.register_query()
         try:

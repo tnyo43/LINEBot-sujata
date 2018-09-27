@@ -14,6 +14,8 @@ from linebot.exceptions import (
 from linebot.models import (
     MessageEvent, TextMessage, TextSendMessage, StickerMessage, StickerSendMessage, ImageMessage, ImageSendMessage, TemplateSendMessage, ImageCarouselTemplate, ImageCarouselColumn, PostbackAction, ConfirmTemplate, MessageTemplateAction
 )
+from utils.states import *
+from utils.send import *
 from models.user import User, Server, Receiver
 from models.psudeDB import PsudeDB
 from models.DB import DB
@@ -49,35 +51,9 @@ def set_psude_db():
 #FIXME:DBAdapterクラスを作成し，メンバにIS_TEST，DB,PsudeDBインスタンスを持って管理.
 db = DB()
 
-# state
-sNAME, sZIP, sMENU, sMENU_NOT_COOKED_YET, sCOMPLETE_AT, sPHOTO, sSERVER_REGISTER = range(7)
-MENU = "menu"
-MESSAGE = "message"
-NAME = "name"
-ZIP = "zip"
-COMPLETE_AT = "comp_at"
-
-def send_image(userId, url):
-    line_bot_api.push_message(userId, ImageSendMessage(
-        original_content_url=SUJATA_URL+url,
-        preview_image_url=SUJATA_URL+url
-    ))
-
-def send_message(userId, text):
-    if IS_TESTING:
-        return text
-    else:
-        line_bot_api.push_message(userId, TextSendMessage(text))
-        db.save_value(userId, MESSAGE, "SENT")
-
-def send_carousel(userId, carousel):
-    line_bot_api.push_message(userId, carousel)
-    db.save_value(userId, MESSAGE, "SENT")
-
 def receive_name(userId, received_text):
     if not IS_TESTING:
         db.save_value(userId, NAME, received_text)
-    
     if len(received_text) <= 20:
         if not IS_TESTING:
             db.set_state(userId, sZIP)
@@ -103,6 +79,10 @@ def receive_zip(userId, zipcode):
             return send_message(userId, zipcode + "登録完了")
 
 def match_userId(userId, received_text, state=None):
+    """
+    userIdのstateを取り出して、そのコメントごとに処理を分岐させる
+    stateはredisで管理
+    """
     user = None
     if IS_TESTING:
         user = psude_db.get_user(userId)
@@ -174,7 +154,7 @@ def get_user_info(userId, void=True):
 def register_role(userId, role, menu=None, cooked=True, completeAt=None):
     user = db.get_user(userId, role)
     other = "receiver" if(role == "server") else "server"
-    
+
     if not user:
         encourage_register(userId)
         return
@@ -198,6 +178,7 @@ def register_role(userId, role, menu=None, cooked=True, completeAt=None):
     else:
         # receiverなら無条件で登録できる
         db.register_role(user)
+        send_message(userId, "マッチングするまでお待ちください")
 
     """
     if IS_TESTING:
@@ -319,5 +300,6 @@ def handle_message(event):
             TextSendMessage(text=text))
 
 if __name__ == "__main__":
+    set_line_api(line_bot_api, db)
     matching.set_line_api(line_bot_api, db)
     app.run()
