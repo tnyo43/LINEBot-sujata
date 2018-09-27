@@ -63,6 +63,7 @@ class User:
         """
         DBから得た情報からServerのオブジェクトを作成
         """
+        print(args)
         return cls(args[0], args[1], args[2])
 
 class Server(User):

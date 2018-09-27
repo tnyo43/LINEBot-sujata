@@ -153,7 +153,6 @@ def get_user_info(userId, void=True):
 
 def register_role(userId, role, menu=None, cooked=True, completeAt=None):
     user = db.get_user(userId, role)
-    other = "receiver" if(role == "server") else "server"
 
     if not user:
         encourage_register(userId)
@@ -180,6 +179,7 @@ def register_role(userId, role, menu=None, cooked=True, completeAt=None):
         db.register_role(user)
         send_message(userId, "マッチングするまでお待ちください")
 
+    matching.matching(user)
     """
     if IS_TESTING:
         psude_db.store_role(user, role)

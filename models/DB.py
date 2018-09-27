@@ -50,7 +50,7 @@ class DB:
     def get_value(self, userId, key, delete=False):
         value = r.get(key+userId)
         if value:
-            value = value.decode('utf-8')
+            value = value.decode('utf-8').strip()
         if delete:
             r.delete(key+userId)
         return value
@@ -59,7 +59,7 @@ class DB:
         dic = {}
         for key in keys:
             value = r.get(key+userId)
-            dic[key] = value.decode('utf-8') if value else None
+            dic[key] = value.decode('utf-8').strip() if value else None
             if delete:
                 r.delete(key+userId)
         return dic
@@ -120,7 +120,7 @@ class DB:
             for row in cur:
                 other = User.new(row, user.other)
                 if other.role == "server":
-                    other.menu = row[-1]
+                    other.menu = row[-1].strip()
                 break
         except Exception as e:
             print(e)

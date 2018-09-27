@@ -1,7 +1,7 @@
 from linebot.models import (
     MessageEvent, TextMessage, TextSendMessage, StickerMessage, StickerSendMessage, ImageMessage, ImageSendMessage
 )
-from utils.send import send_message, send_image, send_carousel, set_line_api as matching_set_line_api
+from utils.send import send_message, send_image, send_carousel, set_line_api
 from models.user import User, Server, Receiver
 from models.psudeDB import PsudeDB
 from carousel_template import server_match_carousel
@@ -26,7 +26,7 @@ def access_database(user, db, file_name, IS_TESTING):
     query = user.register_query()
     db.exe_query(query)
 
-def matching(user, db, file_name):
+def matching(user):
     # serversテーブルで同じ街の人を検索する。()内のTrueをのぞけば自分自信を検索しない
     query = user.matching_query(True)
     db.exe_query(query)#FIXME
@@ -56,4 +56,4 @@ def matching(user, db, file_name):
         receiver = user
 
     # まずはserverだけに送って確認してもらう
-    send_carousel(server_match_carousel(user, other))
+    send_carousel(server.userId, server_match_carousel(server, receiver))

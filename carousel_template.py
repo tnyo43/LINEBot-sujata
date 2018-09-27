@@ -22,7 +22,7 @@ def server_match_carousel(user, other):
     マッチングした時にまずserverに確認を送る
     確認する内容は相手の名前と過去の受け取り回数（必要？）
     """
-    text = other.name + "さんとマッチングします\nよろしいですか？"
+    text = user.menu + "で\n" + other.name + "さんとマッチングします\nよろしいですか？"
     return TemplateSendMessage(
             alt_text='matching comfirmation',
             template=ConfirmTemplate(text = text, actions=[
