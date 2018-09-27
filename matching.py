@@ -46,6 +46,9 @@ def matching(user):
         except Exception as e:
             print(e)
     """
+    if other == None:
+        return
+
     server = None
     receiver = None
     if user.role=="server":
